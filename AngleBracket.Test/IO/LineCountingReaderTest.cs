@@ -28,6 +28,7 @@ using AngleBracket.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 
 namespace AngleBracket.Test.IO
 {
@@ -36,17 +37,17 @@ namespace AngleBracket.Test.IO
     public class LineCountingReaderTest
     {
         // NOTE: Do NOT change this without modifying the tests
-        // Expected results of `ReadByte` at position (x,y):
-        // (0,0) 'a'
-        // (0,1) '\n'
-        // (1,0) 'b'
-        // (1,1) 'c'
-        // (1,2) '\r'
-        // (1,3) '\n'
-        // (2,0) 'd'
-        // (2,1) 'e'
-        // (2,2) 'f'
-        // (2,3) EOF
+        // Expected results of `Read` at position (line,byte,char):
+        // (0,0,0) 'a'
+        // (0,1,1) '\n'
+        // (1,0,0) 'b'
+        // (1,1,1) 'c'
+        // (1,2,2) '\r'
+        // (1,3,3) '\n'
+        // (2,0,0) 'd'
+        // (2,1,1) 'e'
+        // (2,2,2) 'f'
+        // (2,3,3) EOF
         private const string TestString = "a\nbc\r\ndef";
 
         [TestMethod]
@@ -54,29 +55,29 @@ namespace AngleBracket.Test.IO
         {
             using (LineCountingReader reader = new LineCountingReader(GetTestStream()))
             {
-                byte[] buffer = new byte[2];
+                int[] buffer = new int[2];
 
-                Assert.IsTrue(reader.Read(buffer, 0, 2) == 2);
-                Assert.IsTrue(reader.LineOffsetTuple == (1, 0));
+                Assert.IsTrue(reader.Read(buffer) == 2);
+                Assert.IsTrue(reader.LineOffsetTuple == (1, 0, 0));
 
-                Assert.IsTrue(reader.Read(buffer, 0, 2) == 2);
-                Assert.IsTrue(reader.LineOffsetTuple == (1, 2));
+                Assert.IsTrue(reader.Read(buffer) == 2);
+                Assert.IsTrue(reader.LineOffsetTuple == (1, 2, 2));
 
-                Assert.IsTrue(reader.Read(buffer, 0, 2) == 2);
-                Assert.IsTrue(reader.LineOffsetTuple == (2, 0));
+                Assert.IsTrue(reader.Read(buffer) == 2);
+                Assert.IsTrue(reader.LineOffsetTuple == (2, 0, 0));
 
-                Assert.IsTrue(reader.Read(buffer, 0, 2) == 2);
-                Assert.IsTrue(reader.LineOffsetTuple == (2, 2));
+                Assert.IsTrue(reader.Read(buffer) == 2);
+                Assert.IsTrue(reader.LineOffsetTuple == (2, 2, 2));
 
-                Assert.IsTrue(reader.Read(buffer, 0, 2) == 1);
-                Assert.IsTrue(reader.LineOffsetTuple == (2, 3));
+                Assert.IsTrue(reader.Read(buffer) == 1);
+                Assert.IsTrue(reader.LineOffsetTuple == (2, 3, 3));
 
-                Assert.IsTrue(reader.ReadByte() == -1);
+                Assert.IsTrue(reader.Read() == -1);
 
-                List<int> lineLengths = reader.GetLineLengths();
+                List<(int, int)> lineLengths = reader.GetLineLengths();
                 Assert.IsTrue(lineLengths.Count == 2);
-                Assert.IsTrue(lineLengths[0] == 1);
-                Assert.IsTrue(lineLengths[1] == 3);
+                Assert.IsTrue(lineLengths[0] == (1, 1));
+                Assert.IsTrue(lineLengths[1] == (3, 3));
             }
         }
 
@@ -85,42 +86,42 @@ namespace AngleBracket.Test.IO
         {
             using (LineCountingReader reader = new LineCountingReader(GetTestStream()))
             {
-                Assert.IsTrue(reader.Seek(2, SeekOrigin.Begin) == 2);
-                Assert.IsTrue(reader.LineOffsetTuple == (1, 0));
+                reader.Seek(2, SeekOrigin.Begin);
+                Assert.IsTrue(reader.LineOffsetTuple == (1, 0, 0));
 
-                Assert.IsTrue(reader.Seek(3, SeekOrigin.Begin) == 3);
-                Assert.IsTrue(reader.LineOffsetTuple == (1, 1));
+                reader.Seek(3, SeekOrigin.Begin);
+                Assert.IsTrue(reader.LineOffsetTuple == (1, 1, 1));
 
-                Assert.IsTrue(reader.Seek(2, SeekOrigin.Current) == 5);
-                Assert.IsTrue(reader.LineOffsetTuple == (1, 3));
+                reader.Seek(2, SeekOrigin.Current);
+                Assert.IsTrue(reader.LineOffsetTuple == (1, 3, 3));
 
-                Assert.IsTrue(reader.Seek(-4, SeekOrigin.Current) == 1);
-                Assert.IsTrue(reader.LineOffsetTuple == (0, 1));
+                reader.Seek(-4, SeekOrigin.Current);
+                Assert.IsTrue(reader.LineOffsetTuple == (0, 1, 1));
 
-                List<int> lineLengths = reader.GetLineLengths();
+                List<(int, int)> lineLengths = reader.GetLineLengths();
                 Assert.IsTrue(lineLengths.Count == 1);
-                Assert.IsTrue(lineLengths[0] == 1);
+                Assert.IsTrue(lineLengths[0] == (1, 1));
             }
         }
 
         [TestMethod]
-        public void PeekingDoesNothing()
+        public void PeekingDoesntChangeStreamPosition()
         {
             using (LineCountingReader reader = new LineCountingReader(GetTestStream()))
             {
-                byte[] buffer = new byte[2];
+                int[] buffer = new int[2];
 
-                Assert.IsTrue(reader.Seek(5, SeekOrigin.Begin) == 5);
+                reader.Seek(5, SeekOrigin.Begin);
 
                 Assert.IsTrue(reader.Peek() == '\n');
 
-                Assert.IsTrue(reader.Peek(buffer, 0, 2) == 2);
+                Assert.IsTrue(reader.Peek(buffer) == 2);
                 Assert.IsTrue(buffer[0] == '\n');
                 Assert.IsTrue(buffer[1] == 'd');
 
                 Assert.IsTrue(reader.Peek() == '\n');
 
-                Assert.IsTrue(reader.LineOffsetTuple == (1, 3));
+                Assert.IsTrue(reader.LineOffsetTuple == (1, 3, 3));
             }
         }
 
@@ -129,28 +130,26 @@ namespace AngleBracket.Test.IO
         {
             using (LineCountingReader reader = new LineCountingReader(GetTestStream()))
             {
-                byte[] buffer = new byte[2];
+                int[] buffer = new int[2];
 
-                Assert.IsTrue(reader.Seek(5, SeekOrigin.Begin) == 5);
+                reader.Seek(5, SeekOrigin.Begin);
 
                 reader.Backtrack();
-                Assert.IsTrue(reader.LineOffsetTuple == (1, 2));
+                Assert.IsTrue(reader.LineOffsetTuple == (1, 2, 2));
 
-                // backtracking should return characters "backtracked"
-                Assert.IsTrue(reader.Backtrack(10) == 4);
-                Assert.IsTrue(reader.LineOffsetTuple == (0, 0));
+                reader.Backtrack(10);
+                Assert.IsTrue(reader.LineOffsetTuple == (0, 0, 0));
 
-                // backtracking should return characters "backtracked"
-                Assert.IsTrue(reader.Seek(5, SeekOrigin.Begin) == 5);
-                Assert.IsTrue(reader.Backtrack(2) == 2);
-                Assert.IsTrue(reader.LineOffsetTuple == (1, 0));
+                reader.Seek(5, SeekOrigin.Begin);
+                reader.Backtrack(2);
+                Assert.IsTrue(reader.LineOffsetTuple == (1, 1, 1));
             }
         }
 
         private static Stream GetTestStream()
         {
             MemoryStream stream = new MemoryStream();
-            StreamWriter writer = new StreamWriter(stream);
+            StreamWriter writer = new StreamWriter(stream, Encoding.ASCII);
             writer.Write(TestString);
             writer.Flush();
             stream.Position = 0;

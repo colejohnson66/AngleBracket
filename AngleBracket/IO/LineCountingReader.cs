@@ -35,143 +35,234 @@ using System.Threading.Tasks;
 namespace AngleBracket.IO
 {
     [DebuggerDisplay("{" + nameof(GetDebuggerDisplay) + "(),nq}")]
-    public class LineCountingReader : Stream, IDisposable
+    public class LineCountingReader : IDisposable
     {
         private const char LF = '\n';
 
-        private Stream _stream;
+        private BufferedStream _stream;
         private bool _disposed;
 
         // TODO: should reaching EOF add an entry?
-        private List<int> _lineLengths;
+        // tuple is (bytesPerLine, charsPerLine)
+        private List<(int, int)> _lineLengths;
 
+        //private int CharPosition { get; set; } = 0; // `Stream.Position` but for chars, not bytes
         public int Line { get; private set; } = 0;
-        public int Offset { get; private set; } = 0;
+        private int ByteOffset { get; set; } = 0;
+        public int CharOffset { get; private set; } = 0;
 
         public LineCountingReader(Stream stream)
         {
             Contract.Requires(stream.CanRead);
             Contract.Requires(stream.CanSeek);
 
-            _stream = stream;
-            _lineLengths = new List<int>(1024);
+            _stream = new BufferedStream(stream);
+            _lineLengths = new List<(int, int)>(1024);
         }
 
         private string GetDebuggerDisplay()
         {
             return string.Format(
-                "LineCountingReader(Line={0},Offset={1})",
-                Line, Offset
+                "LineCountingReader(Line={0},ByteOffset={1},CharOffset={2})",
+                Line, ByteOffset, CharOffset
             );
         }
 
         // for testing
-        internal List<int> GetLineLengths() => _lineLengths;
-        internal (int, int) LineOffsetTuple => (Line, Offset);
+        internal List<(int, int)> GetLineLengths() => _lineLengths;
+        internal (int, int, int) LineOffsetTuple => (Line, ByteOffset, CharOffset);
 
-        private bool SaveLineLength(int line, int length)
+        private bool SaveLineLength(int line, int byteLength, int charLength)
         {
             Contract.Requires(line >= 0);
-            Contract.Requires(length >= 0);
+            Contract.Requires(byteLength >= 0);
+            Contract.Requires(charLength >= 0);
 
             // save the length, but only if it's never been seen
             if (_lineLengths.Count == line)
             {
-                _lineLengths.Add(length);
+                _lineLengths.Add((byteLength, charLength));
                 return true;
             }
 
             return false;
         }
 
-        public override bool CanRead => _stream.CanRead;
-        public override bool CanSeek => _stream.CanSeek;
-        public override bool CanWrite => false;
-        public override long Length => _stream.Length;
-        public override long Position
-        {
-            // TODO: `Seek(Position - value, SeekOrigin.Current)`?
-            get => _stream.Position;
-            set => Seek(value, SeekOrigin.Begin);
-        }
+        public long ByteLength => _stream.Length;
 
-        public override bool CanTimeout => base.CanTimeout;
-
-        public override int ReadTimeout { get => base.ReadTimeout; set => base.ReadTimeout = value; }
-        public override int WriteTimeout { get => base.WriteTimeout; set => base.WriteTimeout = value; }
-
-        public override void Flush()
-        {
-            _stream.Flush();
-        }
-
-        public override void Close()
+        public void Close()
         {
             _stream.Close();
-            base.Close();
         }
 
-        public override int Read(byte[] buffer, int offset, int count)
+        public int Read()
         {
-            int result = _stream.Read(buffer, offset, count);
+            // decodes UTF-8
 
-            // count line feeds
-            for (int i = 0; i < result; i++)
-            {
-                if (buffer[i] == LF)
-                {
-                    SaveLineLength(Line, Offset);
-                    Line++;
-                    Offset = 0;
-                    continue;
-                }
-                Offset++;
-            }
-
-            return result;
-        }
-
-        public override int Read(Span<byte> buffer)
-        {
-            // TODO
-            throw new NotImplementedException();
-        }
-
-        public override int ReadByte()
-        {
-            int result = _stream.ReadByte();
-            if (result == -1)
+            int byte1 = _stream.ReadByte();
+            if (byte1 == -1)
                 return -1;
 
-            if (result == LF)
+            // one byte (ASCII)
+            if ((byte1 & 0b1000_0000) == 0)
             {
-                SaveLineLength(Line, Offset);
-                Line++;
-                Offset = 0;
-                return LF;
+                if (byte1 == LF)
+                {
+                    SaveLineLength(Line, ByteOffset, CharOffset);
+                    Line++;
+                    ByteOffset = 0;
+                    CharOffset = 0;
+                }
+                else
+                {
+                    ByteOffset++;
+                    CharOffset++;
+                }
+                return byte1;
             }
 
-            Offset++;
-            return result;
+            if ((byte1 & 0b1110_0000) == 0b1100_0000)
+            {
+                // two bytes (U+0080 - U+07FF)
+                int decoded = byte1 & 0b0001_1111;
+
+                int byte2 = _stream.ReadByte();
+                if (byte2 == -1)
+                    throw new FormatException();
+                if ((byte2 & 0b1100_0000) != 0b1000_0000)
+                    throw new FormatException();
+
+                decoded <<= 6;
+                decoded |= byte2 & 0b0011_1111;
+
+                // invalid sequence; must be encoded in smallest form
+                if (decoded < 0x80 || decoded >= 0x7FF)
+                    throw new FormatException();
+
+                // new line will never be decoded here, so don't check for it
+                ByteOffset += 2;
+                CharOffset++;
+                return decoded;
+            }
+
+            if ((byte1 & 0b1111_0000) == 0b1110_0000)
+            {
+                // three bytes (U+0800 - U+FFFF)
+                int decoded = byte1 & 0b0000_1111;
+
+                int byte2 = _stream.ReadByte();
+                if (byte2 == -1)
+                    throw new FormatException();
+                if ((byte2 & 0b1100_0000) != 0b1000_0000)
+                    throw new FormatException();
+
+                decoded <<= 6;
+                decoded |= byte2 & 0b0011_1111;
+
+                int byte3 = _stream.ReadByte();
+                if (byte3 == -1)
+                    throw new FormatException();
+                if ((byte3 & 0b1100_0000) != 0b1000_0000)
+                    throw new FormatException();
+
+                decoded <<= 6;
+                decoded |= byte3 & 0b0011_1111;
+
+                // invalid sequence; must be encoded in smallest form
+                if (decoded < 0x800 || decoded >= 0xFFFF)
+                    throw new FormatException();
+
+                // new line will never be decoded here, so don't check for it
+                ByteOffset += 3;
+                CharOffset++;
+                return decoded;
+            }
+
+            if ((byte1 & 0b1111_1000) == 0b1111_0000)
+            {
+                // four bytes (U+1'0000 - U+10'FFFF)
+                int decoded = byte1 & 0b0000_1111;
+
+                int byte2 = _stream.ReadByte();
+                if (byte2 == -1)
+                    throw new FormatException();
+                if ((byte2 & 0b1100_0000) != 0b1000_0000)
+                    throw new FormatException();
+
+                decoded <<= 6;
+                decoded |= byte2 & 0b0011_1111;
+
+                int byte3 = _stream.ReadByte();
+                if (byte3 == -1)
+                    throw new FormatException();
+                if ((byte3 & 0b1100_0000) != 0b1000_0000)
+                    throw new FormatException();
+
+                decoded <<= 6;
+                decoded |= byte3 & 0b0011_1111;
+
+                int byte4 = _stream.ReadByte();
+                if (byte4 == -1)
+                    throw new FormatException();
+                if ((byte4 & 0b1100_0000) != 0b1000_0000)
+                    throw new FormatException();
+
+                decoded <<= 6;
+                decoded |= byte4 & 0b0011_1111;
+
+                // invalid sequence; must be encoded in smallest form
+                if (decoded < 0x10000 || decoded > 0x10FFFF)
+                    throw new FormatException();
+
+                // new line will never be decoded here, so don't check for it
+                ByteOffset += 4;
+                CharOffset++;
+                return decoded;
+            }
+
+            // while UTF-8 initially supported encoding up to 15
+            //   bits (see RFC2279 section 2), it has since been
+            //   limited to only supporting codepoints through
+            //   U+10FFFF (see RFC3629 section 3)
+            // TODO: should a sentinel be used (such as -2) instead?
+            throw new FormatException();
+        }
+
+        public int Read(int[] buffer)
+        {
+            for (int i = 0; i < buffer.Length; i++)
+            {
+                int c = Read();
+                if (c == -1)
+                    return i;
+                buffer[i] = c;
+            }
+            return buffer.Length;
         }
 
         public int Peek()
         {
-            // avoid needless changing of `Line` and `Offset` by using `_stream` directly
-            int result = _stream.ReadByte();
-            if (result == -1)
+            int c = Read();
+            if (c == -1)
                 return -1;
-
-            _stream.Seek(-1, SeekOrigin.Current);
-            return result;
+            Backtrack();
+            return c;
         }
 
-        public int Peek(byte[] buffer, int offset, int count)
+        public int Peek(int[] buffer)
         {
-            // avoid needless changing of `Line` and `Offset` by using `_stream` directly
-            int result = _stream.Read(buffer, offset, count);
-            _stream.Seek(-result, SeekOrigin.Current);
-            return result;
+            long oldPosition = _stream.Position;
+            (int, int, int) oldTuple = LineOffsetTuple;
+
+            int peeked = Read(buffer);
+
+            // seek back
+            _stream.Seek(oldPosition, SeekOrigin.Begin);
+            Line = oldTuple.Item1;
+            ByteOffset = oldTuple.Item2;
+            CharOffset = oldTuple.Item3;
+
+            return peeked;
         }
 
         public void Backtrack()
@@ -180,18 +271,79 @@ namespace AngleBracket.IO
             if (_stream.Position == 0)
                 return;
 
-            _stream.Seek(-1, SeekOrigin.Current);
+            // to avoid multiple seeks, seek back 4 bytes, then read those 4, and work backwards
+            byte[] buffer = new byte[4];
+            int oldPos = (int)_stream.Position;
 
-            if (Offset == 0)
+            // if we can't seek more than 4 back
+            if (_stream.Position < 4)
             {
-                Line--;
-                Offset = _lineLengths[Line];
+                // fill at the end of the buffer
+                _stream.Seek(0, SeekOrigin.Begin);
+                Debug.Assert(_stream.Read(buffer, 4 - oldPos, oldPos) == oldPos);
+            }
+            else
+            {
+                _stream.Seek(-4, SeekOrigin.Current);
+                Debug.Assert(_stream.Read(buffer, 0, 4) == 4);
+            }
+
+            if ((buffer[3] & 0b1000_0000) == 0)
+            {
+                // one byte
+                if (buffer[3] == LF)
+                {
+                    Debug.Assert(CharOffset == 0);
+                    Debug.Assert(ByteOffset == 0);
+                    Line--;
+                    (int, int) tuple = _lineLengths[Line];
+                    ByteOffset = tuple.Item1;
+                    CharOffset = tuple.Item2;
+                }
+                else
+                {
+                    ByteOffset--;
+                    CharOffset--;
+                }
+
+                _stream.Seek(oldPos - 1, SeekOrigin.Begin);
                 return;
             }
-            Offset--;
+
+            // should never happen - it would mean a malformed bytestream
+            Debug.Assert((buffer[3] & 0b1100_0000) == 0b1000_0000);
+
+            // new lines will never exist here, so don't check for them
+            // if they did exist, `Read` would've thrown upon encounter
+            if ((buffer[2] & 0b1110_0000) == 0b1100_0000)
+            {
+                // two byte
+                ByteOffset -= 2;
+                CharOffset--;
+
+                _stream.Seek(oldPos - 2, SeekOrigin.Begin);
+                return;
+            }
+
+            if ((buffer[1] & 0b1111_0000) == 0b1110_0000)
+            {
+                // three byte
+                ByteOffset -= 3;
+                CharOffset--;
+
+                _stream.Seek(oldPos - 3, SeekOrigin.Begin);
+                return;
+            }
+
+            // four byte
+            Debug.Assert((buffer[0] & 0b1111_1000) == 0b1111_0000);
+            ByteOffset -= 4;
+            CharOffset--;
+
+            _stream.Seek(oldPos - 4, SeekOrigin.Begin);
         }
 
-        public int Backtrack(int count)
+        public void Backtrack(int count)
         {
             Contract.Requires(count >= 0);
 
@@ -200,90 +352,70 @@ namespace AngleBracket.IO
             {
                 // short circuit
                 Line = 0;
-                Offset = 0;
-                int oldPosition = (int)_stream.Position;
+                CharOffset = 0;
+                ByteOffset = 0;
                 _stream.Seek(0, SeekOrigin.Begin);
-                return oldPosition;
+                return;
             }
 
             // TODO: use `_lineLengths` to quickly backtrack
-            int counted = count;
-            while ((counted--) >= 0)
+            while (count-- > 0)
                 Backtrack();
-            return count;
         }
 
-        public override long Seek(long offset, SeekOrigin origin)
+        public void Seek(int charOffset, SeekOrigin origin)
         {
-            byte[] buffer;
-
             if (origin == SeekOrigin.Begin)
             {
-                Line = 0;
-                Offset = 0;
-
-                // TODO: read in chunks, not all at once
-                buffer = new byte[offset];
                 _stream.Seek(0, SeekOrigin.Begin);
-                Read(buffer, 0, buffer.Length);
-                return _stream.Position;
+                Line = 0;
+                ByteOffset = 0;
+                CharOffset = 0;
+
+                // TODO: use `_lineLengths` if possible
+                while (charOffset-- > 0)
+                    Read();
+                return;
             }
 
             if (origin == SeekOrigin.Current)
             {
-                if (offset == 0)
-                    return _stream.Position;
+                if (charOffset == 0)
+                    return;
 
-                if (offset < 0)
+                if (charOffset < 0)
                 {
-                    // TODO: read in chunks, not all at once
-                    buffer = new byte[-offset];
-                    int start = (int)_stream.Seek(offset, SeekOrigin.Current);
-                    int count = _stream.Read(buffer, 0, buffer.Length);
-                    for (int i = count - start; i >= 0; i--)
-                    {
-                        if (buffer[i] == LF)
-                        {
-                            Line--;
-                            Offset = _lineLengths[Line];
-                            continue;
-                        }
-                        Offset--;
-                    }
-
-                    // seek back to where we need
-                    _stream.Seek(offset, SeekOrigin.Current);
-                    return _stream.Position;
+                    // TODO: use `_lineLengths` if possible
+                    Backtrack(-charOffset);
+                    return;
                 }
 
                 // offset > 0
-                // TODO: read in chunks, not all at once
-                buffer = new byte[offset];
-                Read(buffer, 0, buffer.Length);
-                return _stream.Position;
+                while (charOffset-- > 0)
+                    Read();
+                return;
             }
 
             // SeekOrigin.End
             throw new NotImplementedException();
         }
 
-        public override void SetLength(long value) => throw new NotImplementedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotImplementedException();
-
-        protected override void Dispose(bool disposing)
+        protected virtual void Dispose(bool disposing)
         {
             if (_disposed)
                 return;
 
+            // managed cleanup
             if (disposing)
                 _stream.Dispose();
 
             _disposed = true;
         }
 
-        public override void Write(ReadOnlySpan<byte> buffer) => throw new NotImplementedException();
-        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) => throw new NotImplementedException();
-        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) => throw new NotImplementedException();
-        public override void WriteByte(byte value) => throw new NotImplementedException();
+        public void Dispose()
+        {
+            Dispose(true);
+            GC.SuppressFinalize(this);
+        }
     }
 }
