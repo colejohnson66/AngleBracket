@@ -46,6 +46,12 @@ namespace AngleBracket.Tokenizer
             Value = value;
         }
 
+        internal static Token FromCharacter(char c) => new Token(TokenType.Character, c);
+        internal static Token FromComment(string s) => new Token(TokenType.Comment, s);
+        internal static Token FromDoctype(Doctype d) => new Token(TokenType.DocumentType, d);
+        internal static Token FromEof() => new Token(TokenType.EndOfFile, null);
+        internal static Token FromTag(Tag t) => new Token(TokenType.Tag, t);
+
         internal char CharacterValue()
         {
             Contract.Requires(Type == TokenType.Character);
