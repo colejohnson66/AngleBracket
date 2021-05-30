@@ -42,7 +42,7 @@
       "",
       "namespace AngleBracket$2",
       "{",
-      "    public class ${3:MyClass}",
+      "    public class $1",
       "    {",
       "        $0",
       "    }",
