@@ -36,7 +36,7 @@ namespace AngleBracket.Tokenizer
 
         internal Token(TokenType type, object? value)
         {
-            Contract.Requires(type != TokenType.Character || value is char);
+            Contract.Requires(type != TokenType.Character || value is uint);
             Contract.Requires(type != TokenType.Comment || value is string);
             Contract.Requires(type != TokenType.DocumentType || value is Doctype);
             Contract.Requires(type != TokenType.EndOfFile || value == null);
@@ -46,17 +46,17 @@ namespace AngleBracket.Tokenizer
             Value = value;
         }
 
-        internal static Token FromCharacter(char c) => new Token(TokenType.Character, c);
+        internal static Token FromCharacter(uint c) => new Token(TokenType.Character, c);
         internal static Token FromComment(string s) => new Token(TokenType.Comment, s);
         internal static Token FromDoctype(Doctype d) => new Token(TokenType.DocumentType, d);
         internal static Token FromEof() => new Token(TokenType.EndOfFile, null);
         internal static Token FromTag(Tag t) => new Token(TokenType.Tag, t);
 
-        internal char CharacterValue()
+        internal uint CharacterValue()
         {
             Contract.Requires(Type == TokenType.Character);
-            Contract.Requires(Value is char);
-            return (char)Value!;
+            Contract.Requires(Value is uint);
+            return (uint)Value!;
         }
 
         internal string CommentValue()
@@ -84,7 +84,7 @@ namespace AngleBracket.Tokenizer
         {
             if (Type == TokenType.Character)
             {
-                char val = (char)Value!;
+                uint val = (uint)Value!;
                 if (val == '\0')
                     return "Character{\\0}";
                 if (val == '\r')
