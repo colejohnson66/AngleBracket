@@ -2,6 +2,13 @@
 
   <PropertyGroup>
     <TargetFramework>net5.0</TargetFramework>
+    <Authors>Cole Johnson</Authors>
+    <Company>Cole Johnson (Hexware)</Company>
+    <Description>An HTML library exposed as a DOM-like object</Description>
+    <Copyright>Copyright (c) 2021 Cole Johnson</Copyright>
+    <RepositoryUrl>https://github.com/colejohnson66/AngleBracket</RepositoryUrl>
+    <RepositoryType>Git</RepositoryType>
+
     <Nullable>Enable</Nullable>
   </PropertyGroup>
 

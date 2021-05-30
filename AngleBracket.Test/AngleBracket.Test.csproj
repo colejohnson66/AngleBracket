@@ -2,8 +2,14 @@
 
   <PropertyGroup>
     <TargetFramework>net5.0</TargetFramework>
-    <Nullable>Enable</Nullable>
+    <Authors>Cole Johnson</Authors>
+    <Company>Cole Johnson (Hexware)</Company>
+    <Description>Tests for AngleBracket</Description>
+    <Copyright>Copyright (c) 2021 Cole Johnson</Copyright>
+    <RepositoryUrl>https://github.com/colejohnson66/AngleBracket</RepositoryUrl>
+    <RepositoryType>Git</RepositoryType>
 
+    <Nullable>Enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
