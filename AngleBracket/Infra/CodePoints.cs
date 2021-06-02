@@ -1,5 +1,5 @@
 /* ============================================================================
- * File:   CharHelpers.cs
+ * File:   CodePoints.cs
  * Author: Cole Johnson
  * ============================================================================
  * Purpose:
@@ -25,9 +25,13 @@
  * ============================================================================
  */
 
-namespace AngleBracket
+using System;
+using System.Diagnostics;
+using System.Text;
+
+namespace AngleBracket.Infra
 {
-    internal static class CharHelpers
+    internal static class CodePoints
     {
         internal static bool IsSurrogate(int c)
         {
@@ -60,7 +64,7 @@ namespace AngleBracket
             if (c >= 0xFDD0 && c <= 0xFDEF)
                 return true;
 
-            // everything else if of the form U+xxFFFE and U+xxFFFF
+            // everything else is of the form U+xxFFFE and U+xxFFFF
             uint lower16 = (uint)c & 0xFFFFu;
             uint upper = ((uint)c) >> 16;
             if (upper >= 0 && upper <= 0x10)
@@ -150,6 +154,18 @@ namespace AngleBracket
         {
             // An ASCII alphanumeric is an ASCII digit or ASCII alpha.
             return IsAsciiDigit(c) || IsAsciiAlpha(c);
+        }
+
+        /// <summary>
+        /// Converts an array of codepoints into a `string`
+        /// </summary>
+        internal static string StringFromCodePoints(int[] codePoints)
+        {
+            StringBuilder str = new StringBuilder(codePoints.Length);
+            foreach (int u in codePoints)
+                str.Append(Char.ConvertFromUtf32(u));
+
+            return str.ToString();
         }
     }
 }
