@@ -26,6 +26,7 @@
  * ============================================================================
  */
 using AngleBracket.IO;
+using AngleBracket.Infra;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -38,6 +39,8 @@ namespace AngleBracket.Tokenizer
 
     internal class HtmlTokenizer
     {
+        internal const int EOF = -1;
+
         private LineCountingReader _reader;
         private ErrorHandler? _errorHandler;
 
@@ -52,7 +55,7 @@ namespace AngleBracket.Tokenizer
         private Doctype? _doctype;
         private int _charRefCode;
 
-        private delegate IEnumerable<Token> Handler(int c);
+        private delegate Token[]? Handler(int c);
         private Dictionary<TokenizerState, Handler> _stateHandlerMap = new Dictionary<TokenizerState, Handler>();
 
         internal HtmlTokenizer(LineCountingReader reader)
@@ -224,7 +227,10 @@ namespace AngleBracket.Tokenizer
             while (true)
             {
                 int c = _reader.Read();
-                foreach (Token tok in _stateHandlerMap[State](c))
+                Token[]? result = _stateHandlerMap[State](c);
+                if (result == null)
+                    continue;
+                foreach (Token tok in result!)
                 {
                     yield return tok;
                     if (tok.Type == TokenType.EndOfFile)
@@ -233,402 +239,485 @@ namespace AngleBracket.Tokenizer
             }
         }
 
-        private IEnumerable<Token> ParseData(int c)
+        private Token[]? ParseData(int c)
         {
-            throw new NotImplementedException();
+            if (c == '&')
+            {
+                _returnState = TokenizerState.Data;
+                State = TokenizerState.CharacterReference;
+                return null;
+            }
+
+            if (c == '<')
+            {
+                State = TokenizerState.TagOpen;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                return new Token[] { GetCharacterToken(c) };
+            }
+
+            if (c == EOF)
+                return new Token[] { GetEndOfFileToken() };
+
+            return new Token[] { GetCharacterToken(c) };
         }
 
-        private IEnumerable<Token> ParseRCDATA(int c)
+        private Token[]? ParseRCDATA(int c)
         {
-            throw new NotImplementedException();
+            if (c == '&')
+            {
+                _returnState = TokenizerState.RCDATA;
+                State = TokenizerState.CharacterReference;
+                return null;
+            }
+
+            if (c == '<')
+            {
+                _returnState = TokenizerState.RCDATALessThanSign;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+                return new Token[] { GetEndOfFileToken() };
+
+            return new Token[] { GetCharacterToken(c) };
         }
 
-        private IEnumerable<Token> ParseRAWTEXT(int c)
+        private Token[]? ParseRAWTEXT(int c)
         {
-            throw new NotImplementedException();
+            if (c == '<')
+            {
+                State = TokenizerState.RAWTEXT;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+                return new Token[] { GetEndOfFileToken() };
+
+            return new Token[] { GetCharacterToken(c) };
         }
 
-        private IEnumerable<Token> ParseScriptData(int c)
+        private Token[]? ParseScriptData(int c)
         {
-            throw new NotImplementedException();
+            if (c == '<')
+            {
+                State = TokenizerState.ScriptDataLessThanSign;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+                return new Token[] { GetEndOfFileToken() };
+
+            return new Token[] { GetCharacterToken(c) };
         }
 
-        private IEnumerable<Token> ParsePLAINTEXT(int c)
+        private Token[]? ParsePLAINTEXT(int c)
         {
-            throw new NotImplementedException();
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+                return new Token[] { GetEndOfFileToken() };
+
+            return new Token[] { GetCharacterToken(c) };
         }
 
-        private IEnumerable<Token> ParseTagOpen(int c)
+        private Token[]? ParseTagOpen(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseEndTagOpen(int c)
+        private Token[]? ParseEndTagOpen(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseTagName(int c)
+        private Token[]? ParseTagName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseRCDATALessThanSign(int c)
+        private Token[]? ParseRCDATALessThanSign(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseRCDATAEndTagOpen(int c)
+        private Token[]? ParseRCDATAEndTagOpen(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseRCDATAEndTagName(int c)
+        private Token[]? ParseRCDATAEndTagName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseRAWTEXTLessThanSign(int c)
+        private Token[]? ParseRAWTEXTLessThanSign(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseRAWTEXTEndTagOpen(int c)
+        private Token[]? ParseRAWTEXTEndTagOpen(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseRAWTEXTEndTagName(int c)
+        private Token[]? ParseRAWTEXTEndTagName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataLessThanSign(int c)
+        private Token[]? ParseScriptDataLessThanSign(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEndTagOpen(int c)
+        private Token[]? ParseScriptDataEndTagOpen(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEndTagName(int c)
+        private Token[]? ParseScriptDataEndTagName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEscapeStart(int c)
+        private Token[]? ParseScriptDataEscapeStart(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEscapeStartDash(int c)
+        private Token[]? ParseScriptDataEscapeStartDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEscaped(int c)
+        private Token[]? ParseScriptDataEscaped(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEscapedDash(int c)
+        private Token[]? ParseScriptDataEscapedDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEscapedDashDash(int c)
+        private Token[]? ParseScriptDataEscapedDashDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEscapedLessThanSign(int c)
+        private Token[]? ParseScriptDataEscapedLessThanSign(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEscapedEndTagOpen(int c)
+        private Token[]? ParseScriptDataEscapedEndTagOpen(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataEscapedEndTagName(int c)
+        private Token[]? ParseScriptDataEscapedEndTagName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataDoubleEscapeStart(int c)
+        private Token[]? ParseScriptDataDoubleEscapeStart(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataDoubleEscaped(int c)
+        private Token[]? ParseScriptDataDoubleEscaped(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataDoubleEscapedDash(int c)
+        private Token[]? ParseScriptDataDoubleEscapedDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataDoubleEscapedDashDash(int c)
+        private Token[]? ParseScriptDataDoubleEscapedDashDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataDoubleEscapedLessThanSign(int c)
+        private Token[]? ParseScriptDataDoubleEscapedLessThanSign(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseScriptDataDoubleEscapeEnd(int c)
+        private Token[]? ParseScriptDataDoubleEscapeEnd(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseBeforeAttributeName(int c)
+        private Token[]? ParseBeforeAttributeName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAttributeName(int c)
+        private Token[]? ParseAttributeName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAfterAttributeName(int c)
+        private Token[]? ParseAfterAttributeName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseBeforeAttributeValue(int c)
+        private Token[]? ParseBeforeAttributeValue(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAttributeValueDoubleQuoted(int c)
+        private Token[]? ParseAttributeValueDoubleQuoted(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAttributeValueSingleQuoted(int c)
+        private Token[]? ParseAttributeValueSingleQuoted(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAttributeValueUnquoted(int c)
+        private Token[]? ParseAttributeValueUnquoted(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAfterAttributeValueQuoted(int c)
+        private Token[]? ParseAfterAttributeValueQuoted(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseSelfClosingStartTag(int c)
+        private Token[]? ParseSelfClosingStartTag(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseBogusComment(int c)
+        private Token[]? ParseBogusComment(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseMarkupDeclarationOpen(int c)
+        private Token[]? ParseMarkupDeclarationOpen(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentStart(int c)
+        private Token[]? ParseCommentStart(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentStartDash(int c)
+        private Token[]? ParseCommentStartDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseComment(int c)
+        private Token[]? ParseComment(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentLessThanSign(int c)
+        private Token[]? ParseCommentLessThanSign(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentLessThanSignBang(int c)
+        private Token[]? ParseCommentLessThanSignBang(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentLessThanSignBangDash(int c)
+        private Token[]? ParseCommentLessThanSignBangDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentLessThanSignBangDashDash(int c)
+        private Token[]? ParseCommentLessThanSignBangDashDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentEndDash(int c)
+        private Token[]? ParseCommentEndDash(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentEnd(int c)
+        private Token[]? ParseCommentEnd(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCommentEndBang(int c)
+        private Token[]? ParseCommentEndBang(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseDOCTYPE(int c)
+        private Token[]? ParseDOCTYPE(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseBeforeDOCTYPEName(int c)
+        private Token[]? ParseBeforeDOCTYPEName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseDOCTYPEName(int c)
+        private Token[]? ParseDOCTYPEName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAfterDOCTYPEName(int c)
+        private Token[]? ParseAfterDOCTYPEName(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAfterDOCTYPEPublicKeyword(int c)
+        private Token[]? ParseAfterDOCTYPEPublicKeyword(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseBeforeDOCTYPEPublicIdentifier(int c)
+        private Token[]? ParseBeforeDOCTYPEPublicIdentifier(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseDOCTYPEPublicIdentifierDoubleQuoted(int c)
+        private Token[]? ParseDOCTYPEPublicIdentifierDoubleQuoted(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseDOCTYPEPublicIdentifierSingleQuoted(int c)
+        private Token[]? ParseDOCTYPEPublicIdentifierSingleQuoted(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAfterDOCTYPEPublicIdentifier(int c)
+        private Token[]? ParseAfterDOCTYPEPublicIdentifier(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseBetweenDOCTYPEPublicAndSystemIdentifiers(int c)
+        private Token[]? ParseBetweenDOCTYPEPublicAndSystemIdentifiers(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAfterDOCTYPESystemKeyword(int c)
+        private Token[]? ParseAfterDOCTYPESystemKeyword(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseBeforeDOCTYPESystemIdentifier(int c)
+        private Token[]? ParseBeforeDOCTYPESystemIdentifier(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseDOCTYPESystemIdentifierDoubleQuoted(int c)
+        private Token[]? ParseDOCTYPESystemIdentifierDoubleQuoted(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseDOCTYPESystemIdentifierSingleQuoted(int c)
+        private Token[]? ParseDOCTYPESystemIdentifierSingleQuoted(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAfterDOCTYPESystemIdentifier(int c)
+        private Token[]? ParseAfterDOCTYPESystemIdentifier(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseBogusDOCTYPE(int c)
+        private Token[]? ParseBogusDOCTYPE(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCDATASection(int c)
+        private Token[]? ParseCDATASection(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCDATASectionBracket(int c)
+        private Token[]? ParseCDATASectionBracket(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCDATASectionEnd(int c)
+        private Token[]? ParseCDATASectionEnd(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseCharacterReference(int c)
+        private Token[]? ParseCharacterReference(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseNamedCharacterReference(int c)
+        private Token[]? ParseNamedCharacterReference(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseAmbiguousAmpersand(int c)
+        private Token[]? ParseAmbiguousAmpersand(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseNumericCharacterReference(int c)
+        private Token[]? ParseNumericCharacterReference(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseHexadecimalCharacterReferenceStart(int c)
+        private Token[]? ParseHexadecimalCharacterReferenceStart(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseDecimalCharacterReferenceStart(int c)
+        private Token[]? ParseDecimalCharacterReferenceStart(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseHexadecimalCharacterReference(int c)
+        private Token[]? ParseHexadecimalCharacterReference(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseDecimalCharacterReference(int c)
+        private Token[]? ParseDecimalCharacterReference(int c)
         {
             throw new NotImplementedException();
         }
 
-        private IEnumerable<Token> ParseNumericCharacterReferenceEnd(int c)
+        private Token[]? ParseNumericCharacterReferenceEnd(int c)
         {
             throw new NotImplementedException();
         }
