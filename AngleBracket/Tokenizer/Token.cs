@@ -36,7 +36,7 @@ namespace AngleBracket.Tokenizer
 
         internal Token(TokenType type, object? value)
         {
-            Contract.Requires(type != TokenType.Character || value is uint);
+            Contract.Requires(type != TokenType.Character || value is int);
             Contract.Requires(type != TokenType.Comment || value is string);
             Contract.Requires(type != TokenType.DocumentType || value is Doctype);
             Contract.Requires(type != TokenType.EndOfFile || value == null);
@@ -46,7 +46,7 @@ namespace AngleBracket.Tokenizer
             Value = value;
         }
 
-        internal static Token FromCharacter(uint c) => new Token(TokenType.Character, c);
+        internal static Token FromCharacter(int c) => new Token(TokenType.Character, c);
         internal static Token FromComment(string s) => new Token(TokenType.Comment, s);
         internal static Token FromDoctype(Doctype d) => new Token(TokenType.DocumentType, d);
         internal static Token FromEof() => new Token(TokenType.EndOfFile, null);
@@ -55,7 +55,7 @@ namespace AngleBracket.Tokenizer
         internal uint CharacterValue()
         {
             Contract.Requires(Type == TokenType.Character);
-            Contract.Requires(Value is uint);
+            Contract.Requires(Value is int);
             return (uint)Value!;
         }
 

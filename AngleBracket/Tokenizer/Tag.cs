@@ -24,6 +24,7 @@
  *   AngleBracket. If not, see <http://www.gnu.org/licenses/>.
  * ============================================================================
  */
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -44,6 +45,7 @@ namespace AngleBracket.Tokenizer
         internal List<Attribute> Attributes => _attributes;
 
         internal void AppendToName(char c) => _name.Append(c);
+        internal void AppendToName(int c) => _name.Append(Char.ConvertFromUtf32(c));
         internal void AppendToName(string s) => _name.Append(s);
         internal void SetSelfClosingFlag() => _selfClosing = true;
         internal void SetEndTagFlag() => _endTag = true;
