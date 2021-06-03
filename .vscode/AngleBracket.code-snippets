@@ -100,4 +100,13 @@
     ],
     "description": "Creates a stub C# file for testing AngleBracket"
   },
+  "Reconsume": {
+    "scope": "csharp",
+    "prefix": "reconsume",
+    "body": [
+      "List<Token> tokens = new List<Token>() { $1};",
+      "ReconsumeAndAppend(tokens, Parse$2(c));",
+      "return tokens.ToArray();",
+    ]
+  }
 }

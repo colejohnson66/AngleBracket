@@ -1,4 +1,7 @@
 {
   "files.insertFinalNewline": true,
-  "cSpell.words": [],
+  "cSpell.words": [
+    "reconsume",
+    "reconsumed"
+  ],
 }

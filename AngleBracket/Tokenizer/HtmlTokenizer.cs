@@ -207,7 +207,7 @@ namespace AngleBracket.Tokenizer
         private void ReconsumeAndAppend(List<Token> tokens, Token[]? reconsumedTokens)
         {
             if (reconsumedTokens != null)
-                tokens.AddRange(reconsumedTokens!);
+                tokens.AddRange(reconsumedTokens);
         }
 
         private bool IsTabNewlineOrSpace(int c) => c == '\t' || c == '\n' || c == '\r' || c == ' ';
@@ -590,17 +590,85 @@ namespace AngleBracket.Tokenizer
 
         private Token[]? ParseRAWTEXTLessThanSign(int c)
         {
-            throw new NotImplementedException();
+            if (c == '/')
+            {
+                _tempBuf = new StringBuilder();
+                State = TokenizerState.RAWTEXTEndTagOpen;
+                return null;
+            }
+
+            List<Token> tokens = new List<Token>() { GetCharacterToken('<') };
+            ReconsumeAndAppend(tokens, ParseRAWTEXT(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseRAWTEXTEndTagOpen(int c)
         {
-            throw new NotImplementedException();
+            if (CodePoints.IsAsciiAlpha(c))
+            {
+                _tag = new Tag();
+                _tag.SetEndTagFlag();
+                return ParseRAWTEXTEndTagName(c);
+            }
+
+            List<Token> tokens = new List<Token>() {
+                GetCharacterToken('<'),
+                GetCharacterToken('/'),
+            };
+            ReconsumeAndAppend(tokens, ParseRAWTEXT(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseRAWTEXTEndTagName(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c))
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.BeforeAttributeName;
+                    return null;
+                }
+            }
+
+            if (c == '/')
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.SelfClosingStartTag;
+                    return null;
+                }
+            }
+
+            if (c == '>')
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.Data;
+                    return new Token[] { GetTagToken() };
+                }
+            }
+
+            if (CodePoints.IsAsciiAlphaUpper(c))
+            {
+                _tag!.AppendToName(GetLowercaseCharFromAsciiUpper(c));
+                AppendToTempBuffer(c);
+                return null;
+            }
+
+            if (CodePoints.IsAsciiAlphaLower(c))
+            {
+                _tag!.AppendToName(c);
+                AppendToTempBuffer(c);
+                return null;
+            }
+
+            List<Token> tokens = new List<Token>() {
+                GetCharacterToken('<'),
+                GetCharacterToken('/'),
+            };
+            AddTokensForTempBuffer(tokens);
+            ReconsumeAndAppend(tokens, ParseRAWTEXT(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseScriptDataLessThanSign(int c)
