@@ -51,7 +51,7 @@ namespace AngleBracket.Tokenizer
 
         private Comment? _comment;
         private Tag? _tag;
-        private StringBuilder? _tempBuf;
+        private List<int>? _tempBuf;
         private Attribute? _attr;
         private Doctype? _doctype;
         private int _charRefCode;
@@ -240,14 +240,10 @@ namespace AngleBracket.Tokenizer
             return Token.FromTag(tag);
         }
 
-        private void AppendToTempBuffer(int c)
-        {
-            _tempBuf!.Append(Char.ConvertFromUtf32(c));
-        }
-
         private void AddTokensForTempBuffer(List<Token> tokens)
         {
-            foreach (char c in _tempBuf!.ToString())
+            Debug.Assert(_tempBuf != null);
+            foreach (int c in _tempBuf)
                 tokens.Add(GetCharacterToken(c));
             _tempBuf = null;
         }
@@ -509,7 +505,7 @@ namespace AngleBracket.Tokenizer
         {
             if (c == '/')
             {
-                _tempBuf = new StringBuilder();
+                _tempBuf = new List<int>();
                 State = TokenizerState.RCDATAEndTagOpen;
                 return null;
             }
@@ -568,14 +564,14 @@ namespace AngleBracket.Tokenizer
             if (CodePoints.IsAsciiAlphaUpper(c))
             {
                 _tag!.AppendToName(GetLowercaseCharFromAsciiUpper(c));
-                AppendToTempBuffer(c);
+                _tempBuf!.Add(c);
                 return null;
             }
 
             if (CodePoints.IsAsciiAlphaLower(c))
             {
                 _tag!.AppendToName(c);
-                AppendToTempBuffer(c);
+                _tempBuf!.Add(c);
                 return null;
             }
 
@@ -592,7 +588,7 @@ namespace AngleBracket.Tokenizer
         {
             if (c == '/')
             {
-                _tempBuf = new StringBuilder();
+                _tempBuf = new List<int>();
                 State = TokenizerState.RAWTEXTEndTagOpen;
                 return null;
             }
@@ -651,14 +647,14 @@ namespace AngleBracket.Tokenizer
             if (CodePoints.IsAsciiAlphaUpper(c))
             {
                 _tag!.AppendToName(GetLowercaseCharFromAsciiUpper(c));
-                AppendToTempBuffer(c);
+                _tempBuf!.Add(c);
                 return null;
             }
 
             if (CodePoints.IsAsciiAlphaLower(c))
             {
                 _tag!.AppendToName(c);
-                AppendToTempBuffer(c);
+                _tempBuf!.Add(c);
                 return null;
             }
 
