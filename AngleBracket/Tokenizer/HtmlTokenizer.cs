@@ -229,8 +229,7 @@ namespace AngleBracket.Tokenizer
 
         private Token GetTagToken()
         {
-            // If `_tag` is a start tag, save it in `_lastEmittedTag`, then
-            //   return a token for `_tag` before setting it to `null`
+            // If `_tag` is a start tag, save it in `_lastEmittedTag`
             Debug.Assert(_tag != null);
 
             Tag tag = _tag;
@@ -240,12 +239,26 @@ namespace AngleBracket.Tokenizer
             return Token.FromTag(tag);
         }
 
+        private Token GetCommentToken()
+        {
+            Debug.Assert(_comment != null);
+
+            Comment comment = _comment;
+            _comment = null;
+            return Token.FromComment(comment);
+        }
+
         private void AddTokensForTempBuffer(List<Token> tokens)
         {
             Debug.Assert(_tempBuf != null);
             foreach (int c in _tempBuf)
                 tokens.Add(GetCharacterToken(c));
             _tempBuf = null;
+        }
+
+        private string TempBufferAsString()
+        {
+            return CodePoints.StringFromCodePoints(_tempBuf!.ToArray());
         }
         #endregion
 
@@ -669,192 +682,1024 @@ namespace AngleBracket.Tokenizer
 
         private Token[]? ParseScriptDataLessThanSign(int c)
         {
-            throw new NotImplementedException();
+            if (c == '/')
+            {
+                _tempBuf = new List<int>();
+                State = TokenizerState.ScriptDataEndTagOpen;
+                return null;
+            }
+
+            if (c == '!')
+            {
+                State = TokenizerState.ScriptDataEscapeStart;
+                return new Token[] {
+                    GetCharacterToken('<'),
+                    GetCharacterToken('!'),
+                };
+            }
+
+            List<Token> tokens = new List<Token>() { GetCharacterToken('<') };
+            ReconsumeAndAppend(tokens, ParseScriptData(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseScriptDataEndTagOpen(int c)
         {
-            throw new NotImplementedException();
+            if (CodePoints.IsAsciiAlpha(c))
+            {
+                _tag = new Tag();
+                _tag.SetEndTagFlag();
+                return ParseScriptDataEndTagName(c);
+            }
+
+            List<Token> tokens = new List<Token>() {
+                GetCharacterToken('<'),
+                GetCharacterToken('/'),
+            };
+            ReconsumeAndAppend(tokens, ParseScriptData(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseScriptDataEndTagName(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c))
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.BeforeAttributeName;
+                    return null;
+                }
+            }
+
+            if (c == '/')
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.SelfClosingStartTag;
+                    return null;
+                }
+            }
+
+            if (c == '>')
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.Data;
+                    return null;
+                }
+            }
+
+            if (CodePoints.IsAsciiAlphaUpper(c))
+            {
+                _tag!.AppendToName(GetLowercaseCharFromAsciiUpper(c));
+                _tempBuf!.Add(c);
+                return null;
+            }
+
+            if (CodePoints.IsAsciiAlphaLower(c))
+            {
+                _tag!.AppendToName(c);
+                _tempBuf!.Add(c);
+                return null;
+            }
+
+            List<Token> tokens = new List<Token>() {
+                GetCharacterToken('<'),
+                GetCharacterToken('/'),
+            };
+            AddTokensForTempBuffer(tokens);
+            ReconsumeAndAppend(tokens, ParseScriptData(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseScriptDataEscapeStart(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.ScriptDataEscapeStartDash;
+                return new Token[] { GetCharacterToken('-') };
+            }
+
+            return ParseScriptData(c);
         }
 
         private Token[]? ParseScriptDataEscapeStartDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.ScriptDataEscapedDashDash;
+                return new Token[] { GetCharacterToken('-') };
+            }
+
+            return ParseScriptData(c);
         }
 
         private Token[]? ParseScriptDataEscaped(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.ScriptDataEscapedDash;
+                return new Token[] { GetCharacterToken('-') };
+            }
+
+            if (c == '<')
+            {
+                State = TokenizerState.ScriptDataEscapedLessThanSign;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInScriptHtmlCommentLikeText);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            return new Token[] { GetCharacterToken(c) };
         }
 
         private Token[]? ParseScriptDataEscapedDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.ScriptDataEscapedDashDash;
+                return new Token[] { GetCharacterToken('-') };
+            }
+
+            if (c == '<')
+            {
+                State = TokenizerState.ScriptDataEscapedLessThanSign;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                State = TokenizerState.ScriptDataEscaped;
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInScriptHtmlCommentLikeText);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            State = TokenizerState.ScriptDataEscaped;
+            return new Token[] { GetCharacterToken(c) };
         }
 
         private Token[]? ParseScriptDataEscapedDashDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+                return new Token[] { GetCharacterToken('-') };
+
+            if (c == '<')
+            {
+                State = TokenizerState.ScriptDataEscapedLessThanSign;
+                return null;
+            }
+
+            if (c == '>')
+            {
+                State = TokenizerState.ScriptData;
+                return new Token[] { GetCharacterToken('>') };
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                State = TokenizerState.ScriptDataEscaped;
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInScriptHtmlCommentLikeText);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            State = TokenizerState.ScriptDataEscaped;
+            return new Token[] { GetCharacterToken(c) };
         }
 
         private Token[]? ParseScriptDataEscapedLessThanSign(int c)
         {
-            throw new NotImplementedException();
+            if (c == '/')
+            {
+                _tempBuf = new List<int>();
+                State = TokenizerState.ScriptDataEscapedEndTagOpen;
+                return null;
+            }
+
+            if (CodePoints.IsAsciiAlpha(c))
+            {
+                _tempBuf = new List<int>();
+                List<Token> tokensInner = new List<Token>() { GetCharacterToken('<') };
+                ReconsumeAndAppend(tokensInner, ParseScriptDataDoubleEscapeStart(c));
+                return tokensInner.ToArray();
+            }
+
+            List<Token> tokens = new List<Token>() { GetCharacterToken('<') };
+            ReconsumeAndAppend(tokens, ParseScriptDataEscaped(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseScriptDataEscapedEndTagOpen(int c)
         {
-            throw new NotImplementedException();
+            if (CodePoints.IsAsciiAlpha(c))
+            {
+                _tag = new Tag();
+                _tag.SetEndTagFlag();
+                return ParseScriptDataEscapedEndTagName(c);
+            }
+
+            List<Token> tokens = new List<Token>() {
+                GetCharacterToken('<'),
+                GetCharacterToken('/'),
+            };
+            ReconsumeAndAppend(tokens, ParseScriptDataEscaped(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseScriptDataEscapedEndTagName(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c))
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.BeforeAttributeName;
+                    return null;
+                }
+            }
+
+            if (c == '/')
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.SelfClosingStartTag;
+                    return null;
+                }
+            }
+
+            if (c == '>')
+            {
+                if (IsAppropriateEndTagToken())
+                {
+                    State = TokenizerState.Data;
+                    return new Token[] { GetTagToken() };
+                }
+            }
+
+            if (CodePoints.IsAsciiAlphaUpper(c))
+            {
+                _tag!.AppendToName(GetLowercaseCharFromAsciiUpper(c));
+                _tempBuf!.Add(c);
+                return null;
+            }
+
+            if (CodePoints.IsAsciiAlphaLower(c))
+            {
+                _tag!.AppendToName(c);
+                _tempBuf!.Add(c);
+                return null;
+            }
+
+            List<Token> tokens = new List<Token>() {
+                GetCharacterToken('<'),
+                GetCharacterToken('/'),
+            };
+            AddTokensForTempBuffer(tokens);
+            ReconsumeAndAppend(tokens, ParseScriptDataEscaped(c));
+            return tokens.ToArray();
         }
 
         private Token[]? ParseScriptDataDoubleEscapeStart(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c) || c == '/' || c == '>')
+            {
+                if (TempBufferAsString() == "script")
+                    State = TokenizerState.ScriptDataDoubleEscaped;
+                else
+                    State = TokenizerState.ScriptDataEscaped;
+                return new Token[] { GetCharacterToken(c) };
+            }
+
+            if (CodePoints.IsAsciiAlphaUpper(c))
+            {
+                _tempBuf!.Add(GetLowercaseCharFromAsciiUpper(c));
+                return new Token[] { GetCharacterToken(c) };
+            }
+
+            if (CodePoints.IsAsciiAlphaLower(c))
+            {
+                _tempBuf!.Add(c);
+                return new Token[] { GetCharacterToken(c) };
+            }
+
+            return ParseScriptDataEscaped(c);
         }
 
         private Token[]? ParseScriptDataDoubleEscaped(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.ScriptDataDoubleEscapedDash;
+                return new Token[] { GetCharacterToken('-') };
+            }
+
+            if (c == '<')
+            {
+                State = TokenizerState.ScriptDataDoubleEscapedLessThanSign;
+                return new Token[] { GetCharacterToken('<') };
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInScriptHtmlCommentLikeText);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            return new Token[] { GetCharacterToken(c) };
         }
 
         private Token[]? ParseScriptDataDoubleEscapedDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.ScriptDataDoubleEscapedDashDash;
+                return new Token[] { GetCharacterToken('-') };
+            }
+
+            if (c == '<')
+            {
+                State = TokenizerState.ScriptDataDoubleEscapedLessThanSign;
+                return new Token[] { GetCharacterToken('<') };
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                State = TokenizerState.ScriptDataDoubleEscaped;
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInScriptHtmlCommentLikeText);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            State = TokenizerState.ScriptDataDoubleEscaped;
+            return new Token[] { GetCharacterToken(c) };
         }
 
         private Token[]? ParseScriptDataDoubleEscapedDashDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+                return new Token[] { GetCharacterToken('-') };
+
+            if (c == '<')
+            {
+                State = TokenizerState.ScriptDataDoubleEscapedLessThanSign;
+                return new Token[] { GetCharacterToken('<') };
+            }
+
+            if (c == '>')
+            {
+                State = TokenizerState.ScriptData;
+                return new Token[] { GetCharacterToken('>') };
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                State = TokenizerState.ScriptDataDoubleEscaped;
+                return new Token[] { GetReplacementCharacterToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInScriptHtmlCommentLikeText);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            State = TokenizerState.ScriptDataDoubleEscaped;
+            return new Token[] { GetCharacterToken(c) };
         }
 
         private Token[]? ParseScriptDataDoubleEscapedLessThanSign(int c)
         {
-            throw new NotImplementedException();
+            if (c == '/')
+            {
+                _tempBuf = new List<int>();
+                State = TokenizerState.ScriptDataDoubleEscapeEnd;
+                return new Token[] { GetCharacterToken('/') };
+            }
+
+            return ParseScriptDataDoubleEscaped(c);
         }
 
         private Token[]? ParseScriptDataDoubleEscapeEnd(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c) || c == '/' || c == '>')
+            {
+                if (TempBufferAsString() == "script")
+                    State = TokenizerState.ScriptDataEscaped;
+                else
+                    State = TokenizerState.ScriptDataDoubleEscaped;
+                return new Token[] { GetCharacterToken(c) };
+            }
+
+            if (CodePoints.IsAsciiAlphaUpper(c))
+            {
+                _tempBuf!.Add(GetLowercaseCharFromAsciiUpper(c));
+                return new Token[] { GetCharacterToken(c) };
+            }
+
+            if (CodePoints.IsAsciiAlphaLower(c))
+            {
+                _tempBuf!.Add(c);
+                return new Token[] { GetCharacterToken(c) };
+            }
+
+            return ParseScriptDataDoubleEscaped(c);
         }
 
         private Token[]? ParseBeforeAttributeName(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c))
+                return null;
+
+            if (c == '/' || c == '>' || c == EOF)
+                return ParseAfterAttributeName(c);
+
+            if (c == '=')
+            {
+                Error(ParseError.UnexpectedEqualsSignBeforeAttributeName);
+                _attr = new Attribute();
+                _tag!.AddAttribute(_attr);
+                _attr.AppendToName(c);
+                State = TokenizerState.AttributeName;
+                return null;
+            }
+
+            _attr = new Attribute();
+            _tag!.AddAttribute(_attr);
+            return ParseAttributeName(c);
         }
 
         private Token[]? ParseAttributeName(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c) || c == '/' || c == '>')
+                return ParseAfterAttributeName(c);
+
+            if (c == '=')
+            {
+                State = TokenizerState.BeforeAttributeValue;
+                return null;
+            }
+
+            if (CodePoints.IsAsciiAlphaUpper(c))
+            {
+                _attr!.AppendToName(GetLowercaseCharFromAsciiUpper(c));
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                _attr!.AppendToName(REPLACEMENT_CHARACTER);
+                return null;
+            }
+
+            if (c == '"' || c == '\'' || c == '<')
+            {
+                Error(ParseError.UnexpectedCharacterInAttributeName);
+                // "Treat is as per the "anything else" entry below."
+            }
+
+            _attr!.AppendToName(c);
+            return null;
+            // TODO: when leaving this state, and before emitting the tag,
+            // duplicate attributes MUST be handled. Attempting to add a
+            // duplicate attribute is a `ParseError.DuplicateAttribute`.
+            // Drop the NEW duplicate attribute (first one survives)
         }
 
         private Token[]? ParseAfterAttributeName(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c))
+                return null;
+
+            if (c == '/')
+            {
+                State = TokenizerState.SelfClosingStartTag;
+                return null;
+            }
+
+            if (c == '=')
+            {
+                State = TokenizerState.BeforeAttributeValue;
+                return null;
+            }
+
+            if (c == '>')
+            {
+                State = TokenizerState.Data;
+                return new Token[] { GetTagToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInTag);
+                return new Token[] { GetTagToken() };
+            }
+
+            _attr = new Attribute();
+            _tag!.AddAttribute(_attr);
+            return ParseAttributeName(c);
         }
 
         private Token[]? ParseBeforeAttributeValue(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c))
+                return null;
+
+            if (c == '"')
+            {
+                State = TokenizerState.AttributeValueDoubleQuoted;
+                return null;
+            }
+
+            if (c == '\'')
+            {
+                State = TokenizerState.AttributeValueSingleQuoted;
+                return null;
+            }
+
+            if (c == '>')
+            {
+                Error(ParseError.MissingAttributeValue);
+                State = TokenizerState.Data;
+                return new Token[] { GetTagToken() };
+            }
+
+            return ParseAttributeValueUnquoted(c);
         }
 
         private Token[]? ParseAttributeValueDoubleQuoted(int c)
         {
-            throw new NotImplementedException();
+            if (c == '"')
+            {
+                State = TokenizerState.AfterAttributeValueQuoted;
+                return null;
+            }
+
+            if (c == '&')
+            {
+                _returnState = TokenizerState.AttributeValueDoubleQuoted;
+                State = TokenizerState.CharacterReference;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                _attr!.AppendToValue(REPLACEMENT_CHARACTER);
+                return null;
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInTag);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            _attr!.AppendToValue(c);
+            return null;
         }
 
         private Token[]? ParseAttributeValueSingleQuoted(int c)
         {
-            throw new NotImplementedException();
+            if (c == '\'')
+            {
+                State = TokenizerState.AfterAttributeValueQuoted;
+                return null;
+            }
+
+            if (c == '&')
+            {
+                _returnState = TokenizerState.AttributeValueSingleQuoted;
+                State = TokenizerState.CharacterReference;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                _attr!.AppendToValue(REPLACEMENT_CHARACTER);
+                return null;
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInTag);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            _attr!.AppendToValue(c);
+            return null;
         }
 
         private Token[]? ParseAttributeValueUnquoted(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c))
+            {
+                State = TokenizerState.BeforeAttributeName;
+                return null;
+            }
+
+            if (c == '&')
+            {
+                _returnState = TokenizerState.AttributeValueUnquoted;
+                State = TokenizerState.CharacterReference;
+                return null;
+            }
+
+            if (c == '>')
+            {
+                State = TokenizerState.Data;
+                return new Token[] { GetTagToken() };
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                _attr!.AppendToValue(REPLACEMENT_CHARACTER);
+                return null;
+            }
+
+            if (c == '"' || c == '\'' || c == '<' || c == '=' || c == '`')
+            {
+                Error(ParseError.UnexpectedCharacterInUnquotedAttributeValue);
+                // "Treat is as per the "anything else" entry below."
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInTag);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            _attr!.AppendToValue(c);
+            return null;
         }
 
         private Token[]? ParseAfterAttributeValueQuoted(int c)
         {
-            throw new NotImplementedException();
+            if (IsTabNewlineOrSpace(c))
+            {
+                State = TokenizerState.BeforeAttributeName;
+                return null;
+            }
+
+            if (c == '/')
+            {
+                State = TokenizerState.SelfClosingStartTag;
+                return null;
+            }
+
+            if (c == '>')
+            {
+                State = TokenizerState.Data;
+                return new Token[] { GetTagToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInTag);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            Error(ParseError.MissingWhitespaceBetweenAttributes);
+            return ParseBeforeAttributeName(c);
         }
 
         private Token[]? ParseSelfClosingStartTag(int c)
         {
-            throw new NotImplementedException();
+            if (c == '>')
+            {
+                _tag!.SetSelfClosingFlag();
+                State = TokenizerState.Data;
+                return new Token[] { GetTagToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInTag);
+                return new Token[] { GetEndOfFileToken() };
+            }
+
+            Error(ParseError.UnexpectedSolidusInTag);
+            return ParseBeforeAttributeName(c);
         }
 
         private Token[]? ParseBogusComment(int c)
         {
-            throw new NotImplementedException();
+            if (c == '>')
+            {
+                State = TokenizerState.Data;
+                return new Token[] { GetCommentToken() };
+            }
+
+            if (c == EOF)
+            {
+                return new Token[] {
+                    GetCommentToken(),
+                    GetEndOfFileToken(),
+                };
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                _comment!.Append(REPLACEMENT_CHARACTER);
+                return null;
+            }
+
+            _comment!.Append(c);
+            return null;
         }
 
         private Token[]? ParseMarkupDeclarationOpen(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-' && _reader.Peek() == '-')
+            {
+                _reader.Consume();
+                _comment = new Comment();
+                State = TokenizerState.CommentStart;
+                return null;
+            }
+
+            int[] peeked = new int[6];
+            if (_reader.Peek(peeked) == 6)
+            {
+                if (c == 'D' && peeked[0] == 'O' && peeked[1] == 'C' &&
+                    peeked[2] == 'T' && peeked[3] == 'Y' &&
+                    peeked[4] == 'P' && peeked[5] == 'E')
+                {
+                    _reader.Consume(6);
+                    State = TokenizerState.DOCTYPE;
+                    return null;
+                }
+
+                if (c == '[' && peeked[0] == 'C' && peeked[1] == 'D' &&
+                    peeked[2] == 'A' && peeked[3] == 'T' &&
+                    peeked[4] == 'A' && peeked[5] == '[')
+                {
+                    _reader.Consume(6);
+                    // TODO: If there is an "adjusted current node" and it
+                    // is not an element in the HTML namespace, then switch
+                    // to the CDATA section state. Otherwise, this is a
+                    // `ParseError.CDataInHtmlContent`. Create a comment
+                    // token whose data is "[CDATA[" and switch to
+                    // `TokenizerState.BogusComment`.
+                    throw new NotImplementedException();
+                }
+            }
+
+            Error(ParseError.IncorrectlyOpenedComment);
+            _comment = new Comment();
+            State = TokenizerState.BogusComment;
+            // NOTE: standard says to not consume anything in this state,
+            //   so rather than `Backtrack()`, only for it to be read again,
+            //   just reconsume it in the new state
+            return ParseBogusComment(c);
         }
 
         private Token[]? ParseCommentStart(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.CommentStartDash;
+                return null;
+            }
+
+            if (c == '>')
+            {
+                Error(ParseError.AbruptClosingOfEmptyComment);
+                State = TokenizerState.Data;
+                return new Token[] { GetCommentToken() };
+            }
+
+            return ParseComment(c);
         }
 
         private Token[]? ParseCommentStartDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.CommentEnd;
+                return null;
+            }
+
+            if (c == '>')
+            {
+                Error(ParseError.AbruptClosingOfEmptyComment);
+                State = TokenizerState.Data;
+                return new Token[] { GetCommentToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInComment);
+                return new Token[] {
+                    GetCommentToken(),
+                    GetEndOfFileToken(),
+                };
+            }
+
+            _comment!.Append('-');
+            return ParseComment(c);
         }
 
         private Token[]? ParseComment(int c)
         {
-            throw new NotImplementedException();
+            if (c == '<')
+            {
+                _comment!.Append(c);
+                State = TokenizerState.CommentLessThanSign;
+                return null;
+            }
+
+            if (c == '-')
+            {
+                State = TokenizerState.CommentEndDash;
+                return null;
+            }
+
+            if (c == '\0')
+            {
+                Error(ParseError.UnexpectedNullCharacter);
+                _comment!.Append(REPLACEMENT_CHARACTER);
+                return null;
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInComment);
+                return new Token[] {
+                    GetCommentToken(),
+                    GetEndOfFileToken(),
+                };
+            }
+
+            _comment!.Append(c);
+            return null;
         }
 
         private Token[]? ParseCommentLessThanSign(int c)
         {
-            throw new NotImplementedException();
+            if (c == '!')
+            {
+                _comment!.Append(c);
+                State = TokenizerState.CommentLessThanSignBang;
+                return null;
+            }
+
+            if (c == '<')
+            {
+                _comment!.Append(c);
+                return null;
+            }
+
+            return ParseComment(c);
         }
 
         private Token[]? ParseCommentLessThanSignBang(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.CommentLessThanSignBangDash;
+                return null;
+            }
+
+            return ParseComment(c);
         }
 
         private Token[]? ParseCommentLessThanSignBangDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.CommentLessThanSignBangDashDash;
+                return null;
+            }
+
+            return ParseCommentEndDash(c);
         }
 
         private Token[]? ParseCommentLessThanSignBangDashDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '>' || c == EOF)
+                return ParseCommentEnd(c);
+
+            Error(ParseError.NestedComment);
+            return ParseCommentEnd(c);
         }
 
         private Token[]? ParseCommentEndDash(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                State = TokenizerState.CommentEnd;
+                return null;
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInComment);
+                return new Token[] {
+                    GetCommentToken(),
+                    GetEndOfFileToken(),
+                };
+            }
+
+            _comment!.Append('-');
+            return ParseComment(c);
         }
 
         private Token[]? ParseCommentEnd(int c)
         {
-            throw new NotImplementedException();
+            if (c == '>')
+            {
+                State = TokenizerState.Data;
+                return new Token[] { GetCommentToken() };
+            }
+
+            if (c == '!')
+            {
+                State = TokenizerState.CommentEndBang;
+                return null;
+            }
+
+            if (c == '-')
+            {
+                _comment!.Append('-');
+                return null;
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInComment);
+                return new Token[] {
+                    GetCommentToken(),
+                    GetEndOfFileToken(),
+                };
+            }
+
+            _comment!.Append("--");
+            return ParseComment(c);
         }
 
         private Token[]? ParseCommentEndBang(int c)
         {
-            throw new NotImplementedException();
+            if (c == '-')
+            {
+                _comment!.Append("--!");
+                State = TokenizerState.CommentEndDash;
+                return null;
+            }
+
+            if (c == '>')
+            {
+                Error(ParseError.IncorrectlyClosedComment);
+                State = TokenizerState.Data;
+                return new Token[] { GetCommentToken() };
+            }
+
+            if (c == EOF)
+            {
+                Error(ParseError.EofInComment);
+                return new Token[] {
+                    GetCommentToken(),
+                    GetEndOfFileToken(),
+                };
+            }
+
+            _comment!.Append("--!");
+            return ParseComment(c);
         }
 
         private Token[]? ParseDOCTYPE(int c)
