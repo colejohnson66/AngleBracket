@@ -24,6 +24,7 @@
  *   AngleBracket. If not, see <http://www.gnu.org/licenses/>.
  * ============================================================================
  */
+using System;
 using System.Text;
 
 namespace AngleBracket.Tokenizer
@@ -39,8 +40,10 @@ namespace AngleBracket.Tokenizer
         internal string Value => _value.ToString();
 
         internal void AppendToName(char c) => _name.Append(c);
+        internal void AppendToName(int c) => _name.Append(Char.ConvertFromUtf32(c));
         internal void AppendToName(string s) => _name.Append(s);
         internal void AppendToValue(char c) => _value.Append(c);
+        internal void AppendToValue(int c) => _value.Append(char.ConvertFromUtf32(c));
         internal void AppendToValue(string s) => _value.Append(s);
 
         public override string ToString()
