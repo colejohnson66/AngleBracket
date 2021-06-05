@@ -29,8 +29,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.Contracts;
 using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
 
 namespace AngleBracket.IO
 {
@@ -263,6 +261,20 @@ namespace AngleBracket.IO
             CharOffset = oldTuple.Item3;
 
             return peeked;
+        }
+
+        public int Consume()
+        {
+            int c = Read();
+            return (c == -1) ? 0 : 1;
+        }
+
+        public int Consume(int count)
+        {
+            Contract.Requires(count >= 0);
+
+            int[] buffer = new int[count];
+            return Read(buffer);
         }
 
         public void Backtrack()
