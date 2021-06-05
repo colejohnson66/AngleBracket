@@ -37,7 +37,7 @@ namespace AngleBracket.Tokenizer
         internal Token(TokenType type, object? value)
         {
             Contract.Requires(type != TokenType.Character || value is int);
-            Contract.Requires(type != TokenType.Comment || value is string);
+            Contract.Requires(type != TokenType.Comment || value is Comment);
             Contract.Requires(type != TokenType.DocumentType || value is Doctype);
             Contract.Requires(type != TokenType.EndOfFile || value == null);
             Contract.Requires(type != TokenType.Tag || value is Tag);
@@ -47,23 +47,23 @@ namespace AngleBracket.Tokenizer
         }
 
         internal static Token FromCharacter(int c) => new Token(TokenType.Character, c);
-        internal static Token FromComment(string s) => new Token(TokenType.Comment, s);
+        internal static Token FromComment(Comment s) => new Token(TokenType.Comment, s);
         internal static Token FromDoctype(Doctype d) => new Token(TokenType.DocumentType, d);
         internal static Token FromEof() => new Token(TokenType.EndOfFile, null);
         internal static Token FromTag(Tag t) => new Token(TokenType.Tag, t);
 
-        internal uint CharacterValue()
+        internal int CharacterValue()
         {
             Contract.Requires(Type == TokenType.Character);
             Contract.Requires(Value is int);
-            return (uint)Value!;
+            return (int)Value!;
         }
 
-        internal string CommentValue()
+        internal Comment CommentValue()
         {
             Contract.Requires(Type == TokenType.Comment);
-            Contract.Requires(Value is string);
-            return (string)Value!;
+            Contract.Requires(Value is Comment);
+            return (Comment)Value!;
         }
 
         internal Doctype DoctypeValue()
@@ -84,25 +84,25 @@ namespace AngleBracket.Tokenizer
         {
             if (Type == TokenType.Character)
             {
-                uint val = (uint)Value!;
-                if (val == '\0')
+                int c = (int)Value!;
+                if (c == '\0')
                     return "Character{\\0}";
-                if (val == '\r')
+                if (c == '\r')
                     return "Character{\\r}";
-                if (val == '\n')
+                if (c == '\n')
                     return "Character{\\n}";
-                if (val == '\t')
+                if (c == '\t')
                     return "Character{\\t}";
-                return string.Format("Character{{{0}}}", val);
+                return string.Format("Character{{{0}}}", c);
             }
             if (Type == TokenType.Comment)
-                return string.Format("Comment{{\"{0}\"}}", Value!);
+                return string.Format("Comment{{\"{0}\"}}", (Comment)Value!);
             if (Type == TokenType.DocumentType)
-                return string.Format("DocumentType{{{0}}}", Value!);
+                return string.Format("DocumentType{{{0}}}", (Doctype)Value!);
             if (Type == TokenType.EndOfFile)
                 return "EndOfFile";
             Debug.Assert(Type == TokenType.Tag);
-            return string.Format("Tag{{{0}}}", Value!);
+            return string.Format("Tag{{{0}}}", (Tag)Value!);
         }
     }
 }
